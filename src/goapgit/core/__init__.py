@@ -1,5 +1,6 @@
 """Core GOAP components for goapgit."""
 
+from .executor import ActionRunner, ExecutionResult, Executor, StateObserver
 from .models import (
     ActionSpec,
     Config,
@@ -13,17 +14,25 @@ from .models import (
     RiskLevel,
     StrategyRule,
 )
+from .planner import HeuristicWeights, SimplePlanner, heuristic_score
 
 __all__ = [
+    "ActionRunner",
     "ActionSpec",
     "Config",
     "ConflictDetail",
     "ConflictType",
+    "ExecutionResult",
+    "Executor",
     "GoalMode",
     "GoalSpec",
+    "HeuristicWeights",
     "Plan",
     "RepoRef",
     "RepoState",
     "RiskLevel",
+    "SimplePlanner",
+    "StateObserver",
     "StrategyRule",
+    "heuristic_score",
 ]
