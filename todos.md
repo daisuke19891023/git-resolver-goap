@@ -18,11 +18,11 @@
 
 | ID | タスク | 内容 | 主出力 | AC | 依存/備考 |
 |----|--------|------|--------|----|-----------|
-| T10 | GitFacade.run | subprocess ラッパを実装。`timeout`, `cwd`, `dry_run` の制御と例外化を行う。 | `src/goapgit/git/facade.py` | 正常/異常終了の扱いが pytest モックで確認できる。dry-run 時は履歴に記録するのみ。 | フェーズ1のロガーを利用しコマンド出力を記録。 |
-| T11 | fetch/rebase/push API | `fetch()`, `rebase()`, `rebase_continue()/abort()`, `push_with_lease()` を提供。 | 同上 | 所定の引数で git を呼び出す。`subprocess` モックで検証。 | `GitFacade.run` に依存。 |
-| T12 | 状態観測 | `git status --porcelain=v2` を解析し `RepoState` を構築。 | `src/goapgit/git/observe.py` | 変更あり/なし/競合ありのケースがテストデータと一致。 | `core.models.RepoState` を利用。 |
-| T13 | 競合詳細解析 | zdiff3 マーカーを解析し `ConflictDetail.hunk_count` と `ctype` を推定。 | `src/goapgit/git/parse.py` | サンプル競合ファイルで期待値が得られる。 | `.json`/`.yaml` 拡張子の判定ルールを実装。 |
-| T14 | merge-tree 衝突予測 | `git merge-tree --write-tree` の出力を解析して競合集合を推定。 | 同上 | 擬似リポで実マージと結果が一致。 | 重いテストは `pytest.mark.integration`。 |
+| T10 | GitFacade.run | subprocess ラッパを実装。`timeout`, `cwd`, `dry_run` の制御と例外化を行う。 | `src/goapgit/git/facade.py` | 正常/異常終了の扱いが pytest モックで確認できる。dry-run 時は履歴に記録するのみ。 | フェーズ1のロガーを利用しコマンド出力を記録。✅ 完了 |
+| T11 | fetch/rebase/push API | `fetch()`, `rebase()`, `rebase_continue()/abort()`, `push_with_lease()` を提供。 | 同上 | 所定の引数で git を呼び出す。`subprocess` モックで検証。 | `GitFacade.run` に依存。✅ 完了 |
+| T12 | 状態観測 | `git status --porcelain=v2` を解析し `RepoState` を構築。 | `src/goapgit/git/observe.py` | 変更あり/なし/競合ありのケースがテストデータと一致。 | `core.models.RepoState` を利用。✅ 完了 |
+| T13 | 競合詳細解析 | zdiff3 マーカーを解析し `ConflictDetail.hunk_count` と `ctype` を推定。 | `src/goapgit/git/parse.py` | サンプル競合ファイルで期待値が得られる。 | `.json`/`.yaml` 拡張子の判定ルールを実装。✅ 完了 |
+| T14 | merge-tree 衝突予測 | `git merge-tree --write-tree` の出力を解析して競合集合を推定。 | 同上 | 擬似リポで実マージと結果が一致。 | 重いテストは `pytest.mark.integration`。✅ 完了 |
 
 ---
 

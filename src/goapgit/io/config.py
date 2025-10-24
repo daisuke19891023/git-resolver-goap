@@ -5,7 +5,8 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Mapping as MappingABC
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, cast
+from collections.abc import Mapping
 
 from goapgit.core.models import Config
 
@@ -33,7 +34,9 @@ def load_config(
             raise FileNotFoundError(path)
         raw_content = tomllib.loads(path.read_text())
     else:
-        assert data is not None
+        if data is None:
+            msg = "Configuration data must be provided when path is omitted."
+            raise ValueError(msg)
         text = data if isinstance(data, str) else data.decode()
         raw_content = tomllib.loads(text)
 
@@ -53,8 +56,8 @@ def _merge_dicts(base: dict[str, Any], updates: Mapping[str, Any]) -> dict[str, 
             and isinstance(base[key], MappingABC)
             and isinstance(value, MappingABC)
         ):
-            nested_base = cast(dict[str, Any], dict(base[key]))
-            nested_updates = cast(Mapping[str, Any], value)
+            nested_base = cast("dict[str, Any]", dict(base[key]))
+            nested_updates = cast("Mapping[str, Any]", value)
             base[key] = _merge_dicts(nested_base, nested_updates)
         else:
             base[key] = value
