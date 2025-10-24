@@ -126,7 +126,7 @@ class StrategyRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _empty_strategy_rules() -> list["StrategyRule"]:
+def _empty_strategy_rules() -> list[StrategyRule]:
     return []
 
 
