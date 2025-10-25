@@ -1,5 +1,5 @@
 [project]
-name = "template-project-placeholder"
+name = "goapgit"
 version = "0.1.0"
 description = "Template project placeholder description"
 readme = "README.md"
@@ -9,10 +9,11 @@ dependencies = [
     "pydantic>=2.12.3",
     "pydantic-settings>=2.11.0",
     "ulid>=1.1",
+    "typer>=0.15.0",
 ] # Update as needed for real project requirements
 
 [project.scripts]
-template-project-placeholder = "template_package.main:main"  # Replace with actual entry point
+goapgit = "goapgit.cli.main:main"
 
 [project.optional-dependencies]
 dev = [

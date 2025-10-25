@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.13"
 
 [[package]]
@@ -538,6 +538,74 @@ sdist = { url = "https://files.pythonhosted.org/packages/9a/c8/dd58967d119baab74
 wheels = [
     { url = "https://files.pythonhosted.org/packages/01/61/d4b89fec821f72385526e1b9d9a3a0385dda4a72b206d28049e2c7cd39b8/gitpython-3.1.45-py3-none-any.whl", hash = "sha256:8908cb2e02fb3b93b7eb0f2827125cb699869470432cc885f019b8fd0fccff77", size = 208168, upload-time = "2025-07-24T03:45:52.517Z" },
 ]
+
+[[package]]
+name = "goapgit"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-dotenv" },
+    { name = "typer" },
+    { name = "ulid" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "commitizen" },
+    { name = "diff-cover" },
+    { name = "freezegun" },
+    { name = "hatch" },
+    { name = "nox" },
+    { name = "pdm" },
+    { name = "pexpect" },
+    { name = "pip-audit" },
+    { name = "pre-commit" },
+    { name = "py-spy" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "pytest-xdist" },
+    { name = "python-semantic-release" },
+    { name = "responses" },
+    { name = "ruff" },
+    { name = "scalene" },
+    { name = "uv" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "commitizen", marker = "extra == 'dev'", specifier = ">=4.9.1" },
+    { name = "diff-cover", marker = "extra == 'dev'", specifier = ">=9.7.1" },
+    { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5.5" },
+    { name = "hatch", marker = "extra == 'dev'", specifier = ">=1.15.1" },
+    { name = "nox", marker = "extra == 'dev'", specifier = ">=2025.10.16" },
+    { name = "pdm", marker = "extra == 'dev'", specifier = ">=2.26.0" },
+    { name = "pexpect", marker = "extra == 'dev'", specifier = ">=4.9.0" },
+    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.9.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3.0" },
+    { name = "py-spy", marker = "extra == 'dev'", specifier = ">=0.4.1" },
+    { name = "pydantic", specifier = ">=2.12.3" },
+    { name = "pydantic-settings", specifier = ">=2.11.0" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.406" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.2.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.15.1" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
+    { name = "python-semantic-release", marker = "extra == 'dev'", specifier = ">=10.4.1" },
+    { name = "responses", marker = "extra == 'dev'", specifier = ">=0.25.8" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.1" },
+    { name = "scalene", marker = "extra == 'dev'", specifier = ">=1.5.55" },
+    { name = "typer", specifier = ">=0.15.0" },
+    { name = "ulid", specifier = ">=1.1" },
+    { name = "uv", extras = ["dev"], marker = "extra == 'dev'", specifier = ">=0.9.5" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "h11"
@@ -1725,72 +1793,6 @@ wheels = [
 ]
 
 [[package]]
-name = "template-project-placeholder"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "python-dotenv" },
-    { name = "ulid" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "commitizen" },
-    { name = "diff-cover" },
-    { name = "freezegun" },
-    { name = "hatch" },
-    { name = "nox" },
-    { name = "pdm" },
-    { name = "pexpect" },
-    { name = "pip-audit" },
-    { name = "pre-commit" },
-    { name = "py-spy" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "pytest-xdist" },
-    { name = "python-semantic-release" },
-    { name = "responses" },
-    { name = "ruff" },
-    { name = "scalene" },
-    { name = "uv" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "commitizen", marker = "extra == 'dev'", specifier = ">=4.9.1" },
-    { name = "diff-cover", marker = "extra == 'dev'", specifier = ">=9.7.1" },
-    { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5.5" },
-    { name = "hatch", marker = "extra == 'dev'", specifier = ">=1.15.1" },
-    { name = "nox", marker = "extra == 'dev'", specifier = ">=2025.10.16" },
-    { name = "pdm", marker = "extra == 'dev'", specifier = ">=2.26.0" },
-    { name = "pexpect", marker = "extra == 'dev'", specifier = ">=4.9.0" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.9.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3.0" },
-    { name = "py-spy", marker = "extra == 'dev'", specifier = ">=0.4.1" },
-    { name = "pydantic", specifier = ">=2.12.3" },
-    { name = "pydantic-settings", specifier = ">=2.11.0" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.406" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.2.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.15.1" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
-    { name = "python-dotenv", specifier = ">=1.1.1" },
-    { name = "python-semantic-release", marker = "extra == 'dev'", specifier = ">=10.4.1" },
-    { name = "responses", marker = "extra == 'dev'", specifier = ">=0.25.8" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.1" },
-    { name = "scalene", marker = "extra == 'dev'", specifier = ">=1.5.55" },
-    { name = "ulid", specifier = ">=1.1" },
-    { name = "uv", extras = ["dev"], marker = "extra == 'dev'", specifier = ">=0.9.5" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "termcolor"
 version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1842,6 +1844,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/a3/1585216310e344e8102c22482f6060c7a6ea0322b63e026372e6dcefcfd6/truststore-0.10.4.tar.gz", hash = "sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301", size = 26169, upload-time = "2025-08-12T18:49:02.73Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/19/97/56608b2249fe206a67cd573bc93cd9896e1efb9e98bce9c163bcdc704b88/truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981", size = 18660, upload-time = "2025-08-12T18:49:01.46Z" },
+]
+
+[[package]]
+name = "typer"
+version = "0.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "rich" },
+    { name = "shellingham" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/28/7c85c8032b91dbe79725b6f17d2fffc595dff06a35c7a30a37bef73a1ab4/typer-0.20.0.tar.gz", hash = "sha256:1aaf6494031793e4876fb0bacfa6a912b551cf43c1e63c800df8b1a866720c37", size = 106492, upload-time = "2025-10-20T17:03:49.445Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/64/7713ffe4b5983314e9d436a90d5bd4f63b6054e2aca783a3cfc44cb95bbf/typer-0.20.0-py3-none-any.whl", hash = "sha256:5b463df6793ec1dca6213a3cf4c0f03bc6e322ac5e16e13ddd622a889489784a", size = 47028, upload-time = "2025-10-20T17:03:47.617Z" },
 ]
 
 [[package]]
