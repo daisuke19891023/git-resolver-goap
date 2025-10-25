@@ -2,18 +2,64 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
 from goapgit.cli.diagnose import DiagnoseError, generate_diagnosis, report_to_json
+from goapgit.cli.runtime import (
+    WorkflowContext,
+    build_action_contexts,
+    build_action_specs,
+    build_workflow_context,
+    load_cli_config,
+    strategy_rules_to_params,
+)
+from goapgit.core.explain import explain_plan
+from goapgit.core.executor import Executor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+
+def _resolve_repo(repo: Path | None) -> Path:
+    return repo.resolve() if repo is not None else Path.cwd()
+
+
+def _emit_json(payload: Any) -> None:
+    typer.echo(json.dumps(payload, ensure_ascii=False))
+
+
+def _prepare_context(
+    repo: Path | None,
+    config_path: Path | None,
+    *,
+    json_logs: bool,
+    dry_run_actions: bool,
+    silence_logs: bool,
+) -> WorkflowContext:
+    repo_path = _resolve_repo(repo)
+    try:
+        config = load_cli_config(config_path)
+    except FileNotFoundError as exc:
+        typer.echo(f"Configuration file not found: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    return build_workflow_context(
+        repo_path,
+        config,
+        json_logs=json_logs,
+        dry_run_actions=dry_run_actions,
+        silence_logs=silence_logs,
+    )
 
 
 @app.callback()
@@ -34,6 +80,209 @@ def diagnose_command(
 
     output = report_to_json(report, pretty=pretty)
     typer.echo(output)
+
+
+RepoOption = Annotated[Path | None, typer.Option(help="Path to the repository.")]
+ConfigOption = Annotated[Path | None, typer.Option(help="Path to a configuration TOML.")]
+JsonFlag = Annotated[
+    bool,
+    typer.Option("--json", "--json-output", help="Emit JSON instead of text."),
+]
+ConfirmFlag = Annotated[
+    bool,
+    typer.Option(help="Execute actions for real."),
+]
+
+
+@app.command("plan")
+def plan_command(
+    repo: RepoOption = None,
+    config: ConfigOption = None,
+    json_output: JsonFlag = False,
+) -> None:
+    """Display the current repository state and the computed plan."""
+    context = _prepare_context(
+        repo,
+        config,
+        json_logs=json_output,
+        dry_run_actions=True,
+        silence_logs=json_output,
+    )
+    state = context.observer.observe()
+    actions = build_action_specs(state, context.config)
+    plan = context.planner.plan(state, context.config.goal, actions)
+
+    if json_output:
+        payload = {
+            "repository": str(context.repo_path),
+            "state": state.model_dump(mode="json"),
+            "plan": plan.model_dump(mode="json"),
+            "strategy_rules": strategy_rules_to_params(context.config.strategy_rules),
+        }
+        _emit_json(payload)
+        return
+
+    lines: list[str] = [
+        f"Repository: {context.repo_path}",
+        f"Branch: {state.ref.branch} (tracking={state.ref.tracking or 'none'})",
+        f"Estimated cost: {plan.estimated_cost:.2f}",
+        "Actions:",
+    ]
+    for index, action in enumerate(plan.actions, start=1):
+        lines.append(f"  {index}. {action.name} (cost={action.cost:.2f})")
+        if action.rationale:
+            lines.append(f"     reason: {action.rationale}")
+        if action.params:
+            lines.append(f"     params: {json.dumps(action.params, ensure_ascii=False)}")
+    typer.echo("\n".join(lines))
+
+
+def _execute_workflow(context: WorkflowContext) -> dict[str, Any]:
+    state = context.observer.observe()
+    actions = build_action_specs(state, context.config)
+    runner = context.build_action_runner()
+    executor = Executor(
+        planner=context.planner,
+        observer=context.observer.observe,
+        runner=runner,
+        available_actions=actions,
+        goal=context.config.goal,
+    )
+    plan = context.planner.plan(state, context.config.goal, actions)
+    result = executor.execute(state, plan)
+
+    return {
+        "repository": str(context.repo_path),
+        "initial_state": state.model_dump(mode="json"),
+        "initial_plan": plan.model_dump(mode="json"),
+        "executed_actions": [action.model_dump(mode="json") for action in result.executed_actions],
+        "final_plan": result.final_plan.model_dump(mode="json"),
+        "replanned": result.replanned,
+        "command_history": list(context.action_facade.command_history),
+        "dry_run": context.action_facade.dry_run,
+    }
+
+
+@app.command("run")
+def run_command(
+    repo: RepoOption = None,
+    config: ConfigOption = None,
+    json_output: JsonFlag = False,
+    confirm: ConfirmFlag = False,
+) -> None:
+    """Execute the workflow plan, respecting the confirmation flag."""
+    context = _prepare_context(
+        repo,
+        config,
+        json_logs=json_output,
+        dry_run_actions=not confirm,
+        silence_logs=json_output,
+    )
+    payload = _execute_workflow(context)
+
+    if json_output:
+        _emit_json(payload)
+        return
+
+    mode = "dry-run" if payload["dry_run"] else "confirmed"
+    lines = [
+        f"Mode: {mode}",
+        f"Executed actions: {len(payload['executed_actions'])}",
+    ]
+    if payload["replanned"]:
+        lines.append("A replanning step was triggered during execution.")
+    else:
+        lines.append("Plan executed without replanning.")
+    for index, action in enumerate(payload["executed_actions"], start=1):
+        lines.append(f"  {index}. {action['name']}")
+    typer.echo("\n".join(lines))
+
+
+@app.command("dry-run")
+def dry_run_command(
+    repo: RepoOption = None,
+    config: ConfigOption = None,
+    json_output: JsonFlag = False,
+) -> None:
+    """Simulate the run workflow ensuring no repository changes occur."""
+    context = _prepare_context(
+        repo,
+        config,
+        json_logs=json_output,
+        dry_run_actions=True,
+        silence_logs=json_output,
+    )
+    payload = _execute_workflow(context)
+
+    if json_output:
+        _emit_json(payload)
+        return
+
+    lines = [
+        "Mode: dry-run",
+        f"Executed actions: {len(payload['executed_actions'])}",
+        "Command history:",
+    ]
+    for entry in payload["command_history"]:
+        command = " ".join(entry.get("command", []))
+        lines.append(f"  - {command} (returncode={entry.get('returncode')}, dry_run={entry.get('dry_run')})")
+    typer.echo("\n".join(lines))
+
+
+@app.command("explain")
+def explain_command(
+    repo: RepoOption = None,
+    config: ConfigOption = None,
+    json_output: JsonFlag = False,
+) -> None:
+    """Explain each action in the computed plan."""
+    context = _prepare_context(
+        repo,
+        config,
+        json_logs=json_output,
+        dry_run_actions=True,
+        silence_logs=json_output,
+    )
+    state = context.observer.observe()
+    actions = build_action_specs(state, context.config)
+    plan = context.planner.plan(state, context.config.goal, actions)
+    explanations = explain_plan(plan, contexts=build_action_contexts(context.config))
+
+    if json_output:
+        payload = {
+            "repository": str(context.repo_path),
+            "plan": plan.model_dump(mode="json"),
+            "notes": list(plan.notes),
+            "explanations": [
+                {
+                    "action": explanation.action.model_dump(mode="json"),
+                    "reason": explanation.reason,
+                    "alternatives": list(explanation.alternatives),
+                    "cost": explanation.cost,
+                }
+                for explanation in explanations
+            ],
+        }
+        _emit_json(payload)
+        return
+
+    lines = [
+        f"Repository: {context.repo_path}",
+        f"Plan estimated cost: {plan.estimated_cost:.2f}",
+        "Explanations:",
+    ]
+    for index, explanation in enumerate(explanations, start=1):
+        lines.append(f"  {index}. {explanation.action.name} (cost={explanation.cost:.2f})")
+        lines.append(f"     reason: {explanation.reason}")
+        if explanation.alternatives:
+            lines.extend(
+                f"     alternative: {alternative}"
+                for alternative in explanation.alternatives
+            )
+    if plan.notes:
+        lines.append("Notes:")
+        lines.extend(f"  - {note}" for note in plan.notes)
+    typer.echo("\n".join(lines))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
