@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from goapgit.git.facade import GitCommandError
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from goapgit.git.facade import GitFacade
@@ -64,6 +66,52 @@ def rebase_onto_upstream(
         new_base=new_head,
         previous_base=original_head,
     )
+
+
+
+def rebase_continue_or_abort(
+    facade: GitFacade,
+    logger: StructuredLogger,
+    *,
+    backup_ref: str | None = None,
+) -> bool:
+    """Continue an in-progress rebase, aborting on failure."""
+    status = facade.run(["git", "status", "--porcelain"], check=True)
+    conflicts = _extract_conflicted_paths(status.stdout)
+    if conflicts:
+        logger.error(
+            "cannot continue rebase; conflicts remain",
+            conflicted_paths=conflicts,
+        )
+        return False
+
+    try:
+        facade.rebase_continue()
+    except GitCommandError as error:
+        logger.error(
+            "rebase --continue failed",
+            returncode=error.returncode,
+            stderr=error.stderr,
+        )
+        facade.rebase_abort()
+        if backup_ref:
+            facade.run(["git", "reset", "--hard", backup_ref])
+            logger.warning("restored head from backup", backup_ref=backup_ref)
+        return False
+
+    logger.info("rebase continued successfully")
+    return True
+
+
+def _extract_conflicted_paths(status: str) -> list[str]:
+    conflicts: list[str] = []
+    for line in status.splitlines():
+        if not line:
+            continue
+        code = line[:2]
+        if "U" in code:
+            conflicts.append(line[3:].strip())
+    return conflicts
 
 
 def _current_branch(facade: GitFacade) -> str | None:
