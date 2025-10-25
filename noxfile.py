@@ -18,7 +18,7 @@ nox.options.default_venv_backend = "uv"
 nox.options.reuse_existing_virtualenvs = True
 
 # Coverage threshold
-COVER_MIN = 60
+COVER_MIN = 80
 
 
 def has_test_targets() -> bool:
