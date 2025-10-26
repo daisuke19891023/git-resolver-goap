@@ -44,17 +44,23 @@ class MergeInputs:
 
 def merge_structured_documents(inputs: MergeInputs) -> bool:
     """Merge JSON documents, updating ``inputs.current`` on success."""
-    original = inputs.current.read_text(encoding="utf-8")
+    original: str | None = None
     try:
+        _ensure_safe_path(inputs.current, "current")
+        _ensure_safe_path(inputs.base, "base", allow_missing=True)
+        _ensure_safe_path(inputs.other, "other", allow_missing=True)
+        original = inputs.current.read_text(encoding="utf-8")
         base = _load_document(inputs.base)
         current = _load_document(inputs.current)
         other = _load_document(inputs.other)
         merged = _merge_values(base, current, other)
     except MergeError:
-        inputs.current.write_text(original, encoding="utf-8")
+        if original is not None:
+            inputs.current.write_text(original, encoding="utf-8")
         return False
     except Exception as exc:  # pragma: no cover - safety net
-        inputs.current.write_text(original, encoding="utf-8")
+        if original is not None:
+            inputs.current.write_text(original, encoding="utf-8")
         message = "failed to load structured documents"
         raise MergeError(message) from exc
 
@@ -95,6 +101,22 @@ def _write_document(path: Path, data: Any) -> None:
     normalised = _normalise(data)
     formatted = json.dumps(normalised, indent=2, ensure_ascii=False, sort_keys=False)
     path.write_text(f"{formatted}\n", encoding="utf-8")
+
+
+def _ensure_safe_path(path: Path, role: str, *, allow_missing: bool = False) -> None:
+    if path.is_symlink():
+        message = f"refusing to use symlinked {role} document: {path}"
+        raise MergeError(message)
+    resolved = path.resolve()
+    cwd = Path.cwd()
+    if not resolved.is_relative_to(cwd):
+        message = f"{role} document outside working tree: {path}"
+        raise MergeError(message)
+    if not path.exists():
+        if allow_missing:
+            return
+        message = f"missing {role} document: {path}"
+        raise MergeError(message)
 
 
 def _normalise(value: Any) -> Any:
