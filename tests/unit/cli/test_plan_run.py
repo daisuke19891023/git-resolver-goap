@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from typer.testing import CliRunner
@@ -15,6 +15,15 @@ cli_main = importlib.import_module("goapgit.cli.main")
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from goapgit.cli.main import PlanComputation
+    from goapgit.cli.runtime import WorkflowContext
+    from collections.abc import Callable
+
+    WorkflowContextFactory = Callable[..., WorkflowContext]
+    PlanPayloadBuilder = Callable[[WorkflowContext], PlanComputation]
+else:
+    WorkflowContextFactory = object
+    PlanPayloadBuilder = object
 
 
 @pytest.fixture
@@ -124,3 +133,26 @@ def test_dry_run_command_reports_history(init_repo: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["dry_run"] is True
     assert payload["command_history"], "dry-run should record command history"
+
+
+def test_build_plan_payload_returns_expected_sections(init_repo: Path) -> None:
+    """Ensure the shared helper reports state, actions, and plans."""
+    prepare_context = cast("WorkflowContextFactory",
+        object.__getattribute__(cli_main, "_prepare_context"),
+    )
+    build_plan_payload = cast("PlanPayloadBuilder",
+        object.__getattribute__(cli_main, "_build_plan_payload"),
+    )
+
+    context = prepare_context(
+        repo=init_repo,
+        config_path=None,
+        json_logs=True,
+        dry_run_actions=True,
+        silence_logs=True,
+    )
+    computation = build_plan_payload(context)
+
+    assert computation.state.ref.branch
+    assert computation.actions, "actions catalogue should not be empty"
+    assert computation.plan.actions, "plan should contain actions"
