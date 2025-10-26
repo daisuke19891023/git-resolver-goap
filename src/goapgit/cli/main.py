@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Sequence  # noqa: UP035
 
 import typer
 
@@ -22,7 +22,6 @@ from goapgit.core.explain import explain_plan
 from goapgit.core.executor import Executor
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from goapgit.core.models import ActionSpec, Plan, RepoState
 
 
@@ -44,6 +43,19 @@ def _resolve_repo(repo: Path | None) -> Path:
 
 def _emit_json(payload: Any) -> None:
     typer.echo(json.dumps(payload, ensure_ascii=False))
+
+
+def _format_command(parts: Sequence[str]) -> str:
+    """Render a command sequence with escaped control characters."""
+
+    def _format_part(part: str) -> str:
+        escaped = part.encode("unicode_escape").decode("ascii")
+        if any(char.isspace() for char in part):
+            escaped = escaped.replace('"', r"\"")
+            return f'"{escaped}"'
+        return escaped
+
+    return " ".join(_format_part(part) for part in parts)
 
 
 def _prepare_context(
@@ -241,7 +253,7 @@ def dry_run_command(
         "Command history:",
     ]
     for entry in payload["command_history"]:
-        command = " ".join(entry.get("command", []))
+        command = _format_command(tuple(str(part) for part in entry.get("command", [])))
         lines.append(f"  - {command} (returncode={entry.get('returncode')}, dry_run={entry.get('dry_run')})")
     typer.echo("\n".join(lines))
 
