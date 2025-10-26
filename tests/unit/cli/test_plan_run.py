@@ -80,6 +80,23 @@ def test_plan_command_outputs_json(init_repo: Path) -> None:
     assert payload["state"]["ref"]["branch"], "branch name must be reported"
 
 
+def test_plan_command_reports_validation_error(tmp_path: Path) -> None:
+    """Invalid configuration files should surface a friendly validation error."""
+    config_path = tmp_path / "invalid.toml"
+    config_path.write_text("""
+[goal]
+mode = "invalid"
+""".strip(), encoding="utf-8")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(cli_main.app, ["plan", "--config", str(config_path)])
+
+    assert result.exit_code == 2
+    assert "Invalid configuration" in result.stderr
+    assert "goal.mode" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_run_command_without_confirm_is_dry(init_repo: Path) -> None:
     """The run command without --confirm must not create backup refs."""
     runner = CliRunner()
