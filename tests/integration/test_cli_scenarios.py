@@ -134,6 +134,32 @@ def test_plan_json_output_includes_conflict_metadata(
     assert payload["strategy_rules"][1]["when"] == "whitespace_only"
 
 
+def test_plan_reports_git_command_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configure_fake_git_facade: ScriptQueue,
+) -> None:
+    """A failing git status should surface a concise CLI error and exit code."""
+    monkeypatch.chdir(tmp_path)
+    error_message = "fatal: not a git repository (or any of the parent directories): .git"
+    status_script: dict[tuple[str, ...], list[GitResponse] | GitResponse] = {
+        STATUS_COMMAND: [
+            _response(stdout="", stderr=error_message, returncode=128),
+        ],
+    }
+    configure_fake_git_facade.push(status_script)
+    configure_fake_git_facade.push({})
+
+    local_runner = CliRunner(mix_stderr=False)
+    result = local_runner.invoke(app, ["plan"])
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert result.stdout == ""
+    assert error_message in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_run_confirm_applies_lock_strategy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
