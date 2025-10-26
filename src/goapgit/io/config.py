@@ -32,7 +32,16 @@ def load_config(
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(path)
-        raw_content = tomllib.loads(path.read_text())
+        if not path.is_file():
+            msg = f"Configuration path '{path}' is not a file."
+            raise ValueError(msg)
+        try:
+            text = path.read_text()
+        except OSError as error:
+            reason = getattr(error, "strerror", None) or str(error)
+            msg = f"Failed to read configuration file at '{path}': {reason}"
+            raise ValueError(msg) from error
+        raw_content = tomllib.loads(text)
     else:
         if data is None:
             msg = "Configuration data must be provided when path is omitted."

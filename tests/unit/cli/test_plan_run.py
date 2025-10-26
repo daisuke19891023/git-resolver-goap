@@ -97,6 +97,19 @@ mode = "invalid"
     assert "Traceback" not in result.stderr
 
 
+def test_plan_command_reports_value_error_for_bad_path(tmp_path: Path) -> None:
+    """Invalid config paths should surface ValueError messages cleanly."""
+    config_dir = tmp_path / "config_dir"
+    config_dir.mkdir()
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(cli_main.app, ["plan", "--config", str(config_dir)])
+
+    assert result.exit_code == 2
+    assert "not a file" in result.stderr
+    assert str(config_dir) in result.stderr
+
+
 def test_run_command_without_confirm_is_dry(init_repo: Path) -> None:
     """The run command without --confirm must not create backup refs."""
     runner = CliRunner()
