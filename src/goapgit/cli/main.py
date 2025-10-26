@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -22,9 +23,19 @@ from goapgit.core.executor import Executor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from goapgit.core.models import ActionSpec, Plan, RepoState
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+
+@dataclass(frozen=True, slots=True)
+class PlanComputation:
+    """Container describing a freshly computed plan for a repository."""
+
+    state: RepoState
+    actions: list[ActionSpec]
+    plan: Plan
 
 
 def _resolve_repo(repo: Path | None) -> Path:
@@ -60,6 +71,14 @@ def _prepare_context(
         dry_run_actions=dry_run_actions,
         silence_logs=silence_logs,
     )
+
+
+def _build_plan_payload(context: WorkflowContext) -> PlanComputation:
+    """Return the repo state, available actions, and plan for ``context``."""
+    state = context.observer.observe()
+    actions = build_action_specs(state, context.config)
+    plan = context.planner.plan(state, context.config.goal, actions)
+    return PlanComputation(state=state, actions=actions, plan=plan)
 
 
 @app.callback()
@@ -108,9 +127,9 @@ def plan_command(
         dry_run_actions=True,
         silence_logs=json_output,
     )
-    state = context.observer.observe()
-    actions = build_action_specs(state, context.config)
-    plan = context.planner.plan(state, context.config.goal, actions)
+    computation = _build_plan_payload(context)
+    state = computation.state
+    plan = computation.plan
 
     if json_output:
         payload = {
@@ -138,23 +157,21 @@ def plan_command(
 
 
 def _execute_workflow(context: WorkflowContext) -> dict[str, Any]:
-    state = context.observer.observe()
-    actions = build_action_specs(state, context.config)
+    computation = _build_plan_payload(context)
     runner = context.build_action_runner()
     executor = Executor(
         planner=context.planner,
         observer=context.observer.observe,
         runner=runner,
-        available_actions=actions,
+        available_actions=computation.actions,
         goal=context.config.goal,
     )
-    plan = context.planner.plan(state, context.config.goal, actions)
-    result = executor.execute(state, plan)
+    result = executor.execute(computation.state, computation.plan)
 
     return {
         "repository": str(context.repo_path),
-        "initial_state": state.model_dump(mode="json"),
-        "initial_plan": plan.model_dump(mode="json"),
+        "initial_state": computation.state.model_dump(mode="json"),
+        "initial_plan": computation.plan.model_dump(mode="json"),
         "executed_actions": [action.model_dump(mode="json") for action in result.executed_actions],
         "final_plan": result.final_plan.model_dump(mode="json"),
         "replanned": result.replanned,
@@ -243,9 +260,8 @@ def explain_command(
         dry_run_actions=True,
         silence_logs=json_output,
     )
-    state = context.observer.observe()
-    actions = build_action_specs(state, context.config)
-    plan = context.planner.plan(state, context.config.goal, actions)
+    computation = _build_plan_payload(context)
+    plan = computation.plan
     explanations = explain_plan(plan, contexts=build_action_contexts(context.config))
 
     if json_output:
