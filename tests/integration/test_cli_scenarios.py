@@ -197,8 +197,8 @@ def test_run_confirm_applies_lock_strategy(
         ("git", "stash", "push", "--include-untracked", "-m", f"goap/{timestamp}"): [_response(stdout="Saved\n")],
         ("git", "config", "--bool", "rerere.enabled"): [_response(stdout="true\n")],
         ("git", "rerere"): [_response()],
-        ("git", "add", "yarn.lock"): [_response(), _response()],
-        ("git", "checkout", "--theirs", "yarn.lock"): [_response()],
+        ("git", "add", "--", "yarn.lock"): [_response(), _response()],
+        ("git", "checkout", "--theirs", "--", "yarn.lock"): [_response()],
     }
     configure_fake_git_facade.push(action_script)
 
@@ -221,5 +221,5 @@ def test_run_confirm_applies_lock_strategy(
     assert ["git", "stash", "push", "--include-untracked", "-m", f"goap/{timestamp}"] in history_commands
     assert ["git", "config", "--bool", "rerere.enabled"] in history_commands
     assert ["git", "rerere"] in history_commands
-    assert ["git", "checkout", "--theirs", "yarn.lock"] in history_commands
-    assert ["git", "add", "yarn.lock"] in history_commands
+    assert ["git", "checkout", "--theirs", "--", "yarn.lock"] in history_commands
+    assert ["git", "add", "--", "yarn.lock"] in history_commands

@@ -46,7 +46,7 @@ def auto_trivial_resolve(facade: GitFacade, logger: StructuredLogger) -> bool:
         code = line[:2]
         path = line[3:].strip()
         if "U" in code and path:
-            facade.run(["git", "add", path])
+            facade.run(["git", "add", "--", path])
             staged.append(path)
     logger.info("applied rerere resolutions", staged_paths=staged)
     return True
@@ -65,16 +65,16 @@ def apply_path_strategy(
         if rule is None:
             continue
         if rule.resolution == "theirs":
-            facade.run(["git", "checkout", "--theirs", conflict.path])
+            facade.run(["git", "checkout", "--theirs", "--", conflict.path])
         elif rule.resolution == "ours":
-            facade.run(["git", "checkout", "--ours", conflict.path])
+            facade.run(["git", "checkout", "--ours", "--", conflict.path])
         else:
             logger.warning(
                 "unsupported resolution strategy",
                 rule={"pattern": rule.pattern, "resolution": rule.resolution, "when": rule.when},
             )
             continue
-        facade.run(["git", "add", conflict.path])
+        facade.run(["git", "add", "--", conflict.path])
         logger.info(
             "applied path strategy",
             path=conflict.path,
