@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Sequence  # noqa: UP035
+from typing import TYPE_CHECKING, Annotated, Any, Callable, Sequence  # noqa: UP035
 
 import typer
 
@@ -20,6 +20,7 @@ from goapgit.cli.runtime import (
 )
 from goapgit.core.explain import explain_plan
 from goapgit.core.executor import Executor
+from goapgit.git.facade import GitCommandError
 
 if TYPE_CHECKING:
     from goapgit.core.models import ActionSpec, Plan, RepoState
@@ -93,6 +94,39 @@ def _build_plan_payload(context: WorkflowContext) -> PlanComputation:
     return PlanComputation(state=state, actions=actions, plan=plan)
 
 
+def _format_git_failure(exc: Exception) -> str:
+    """Return a concise human-readable description for git-related failures."""
+    if isinstance(exc, GitCommandError):
+        stderr = exc.stderr.strip()
+        if stderr:
+            return stderr
+        return str(exc)
+    if isinstance(exc, OSError):
+        message = getattr(exc, "strerror", None)
+        if message:
+            return str(message)
+    return str(exc)
+
+
+def _handle_git_failures[T](operation: Callable[[], T]) -> T:
+    """Execute ``operation`` and convert git/OSError failures into CLI exits."""
+    try:
+        return operation()
+    except (GitCommandError, OSError) as exc:
+        typer.echo(_format_git_failure(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _safe_build_plan_payload(context: WorkflowContext) -> PlanComputation:
+    """Wrap plan computation and surface CLI-friendly errors."""
+    return _handle_git_failures(lambda: _build_plan_payload(context))
+
+
+def _safe_execute_workflow(context: WorkflowContext) -> dict[str, Any]:
+    """Wrap workflow execution and surface CLI-friendly errors."""
+    return _handle_git_failures(lambda: _execute_workflow(context))
+
+
 @app.callback()
 def cli_root() -> None:
     """Top-level CLI group for goapgit."""
@@ -139,7 +173,7 @@ def plan_command(
         dry_run_actions=True,
         silence_logs=json_output,
     )
-    computation = _build_plan_payload(context)
+    computation = _safe_build_plan_payload(context)
     state = computation.state
     plan = computation.plan
 
@@ -207,7 +241,7 @@ def run_command(
         dry_run_actions=not confirm,
         silence_logs=json_output,
     )
-    payload = _execute_workflow(context)
+    payload = _safe_execute_workflow(context)
 
     if json_output:
         _emit_json(payload)
@@ -241,7 +275,7 @@ def dry_run_command(
         dry_run_actions=True,
         silence_logs=json_output,
     )
-    payload = _execute_workflow(context)
+    payload = _safe_execute_workflow(context)
 
     if json_output:
         _emit_json(payload)
@@ -272,7 +306,7 @@ def explain_command(
         dry_run_actions=True,
         silence_logs=json_output,
     )
-    computation = _build_plan_payload(context)
+    computation = _safe_build_plan_payload(context)
     plan = computation.plan
     explanations = explain_plan(plan, contexts=build_action_contexts(context.config))
 
