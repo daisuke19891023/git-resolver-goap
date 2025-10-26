@@ -135,6 +135,39 @@ def test_dry_run_command_reports_history(init_repo: Path) -> None:
     assert payload["command_history"], "dry-run should record command history"
 
 
+def test_dry_run_command_escapes_control_sequences(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure control characters in recorded commands are escaped before display."""
+    payload: dict[str, object] = {
+        "dry_run": True,
+        "executed_actions": [],
+        "command_history": [
+            {
+                "command": ["git", "commit", "\x1b[31mred\x1b[0m"],
+                "returncode": 0,
+                "dry_run": True,
+            },
+        ],
+    }
+
+    sentinel_context = object()
+
+    def fake_prepare_context(*_: object, **__: object) -> object:
+        return sentinel_context
+
+    def fake_execute_workflow(_: object) -> dict[str, object]:
+        return payload
+
+    monkeypatch.setattr(cli_main, "_prepare_context", fake_prepare_context)
+    monkeypatch.setattr(cli_main, "_execute_workflow", fake_execute_workflow)
+
+    runner = CliRunner()
+    result = runner.invoke(cli_main.app, ["dry-run"])
+
+    assert result.exit_code == 0, result.stderr
+    assert "\\x1b" in result.stdout
+    assert "\x1b" not in result.stdout
+
+
 def test_build_plan_payload_returns_expected_sections(init_repo: Path) -> None:
     """Ensure the shared helper reports state, actions, and plans."""
     prepare_context = cast("WorkflowContextFactory",
