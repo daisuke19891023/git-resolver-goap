@@ -109,6 +109,23 @@ def test_merge_structured_documents_rejects_symlink_inputs(tmp_path: Path) -> No
         assert current_target.read_text(encoding="utf-8") == original
 
 
+def test_merge_structured_documents_allows_missing_base(tmp_path: Path) -> None:
+    """Allow merges to proceed when the base input is absent."""
+    with _ChangeCwd(tmp_path):
+        base = tmp_path / "base.json"
+        current = tmp_path / "current.json"
+        other = tmp_path / "other.json"
+
+        _write_json(current, {"value": 1})
+        _write_json(other, {"value": 1, "extra": True})
+
+        inputs = MergeInputs(base=base, current=current, other=other)
+        assert merge_structured_documents(inputs) is True
+
+        merged = json.loads(current.read_text(encoding="utf-8"))
+        assert merged == {"value": 1, "extra": True}
+
+
 def test_repository_declares_json_merge_driver() -> None:
     """Ensure the repository configures the JSON merge driver."""
     attributes = Path(".gitattributes").read_text(encoding="utf-8")

@@ -50,9 +50,9 @@ def merge_structured_documents(inputs: MergeInputs) -> bool:
         _ensure_safe_path(inputs.base, "base", allow_missing=True)
         _ensure_safe_path(inputs.other, "other", allow_missing=True)
         original = inputs.current.read_text(encoding="utf-8")
-        base = _load_document(inputs.base)
+        base = _load_document(inputs.base) if inputs.base.exists() else _MISSING
         current = _load_document(inputs.current)
-        other = _load_document(inputs.other)
+        other = _load_document(inputs.other) if inputs.other.exists() else _MISSING
         merged = _merge_values(base, current, other)
     except MergeError:
         if original is not None:
@@ -133,6 +133,8 @@ def _normalise(value: Any) -> Any:
 
 
 def _merge_values(base: Any, ours: Any, theirs: Any) -> Any:
+    if ours is _MISSING or theirs is _MISSING:
+        return _merge_missing_branches(base, ours, theirs)
     if _equal(ours, theirs):
         return ours
     if base is not _MISSING and _equal(base, ours):
@@ -201,6 +203,26 @@ def _merge_sequences(base: Any, ours: Sequence[Any], theirs: Sequence[Any]) -> S
         return ours
     message = "conflicting list modifications"
     raise MergeError(message)
+
+
+def _merge_missing_branches(base: Any, ours: Any, theirs: Any) -> Any:
+    ours_missing = ours is _MISSING
+    theirs_missing = theirs is _MISSING
+    if ours_missing and theirs_missing:
+        if base is _MISSING:
+            return {}
+        return base
+    if ours_missing:
+        if base is _MISSING or _equal(base, theirs):
+            return theirs
+        message = "conflicting deletion in current branch"
+        raise MergeError(message)
+    if theirs_missing:
+        if base is _MISSING or _equal(base, ours):
+            return ours
+        message = "conflicting deletion in other branch"
+        raise MergeError(message)
+    return ours
 
 
 def _equal(left: Any, right: Any) -> bool:
