@@ -91,7 +91,6 @@ ignore = [
     "EXE001",
     "EXE002",
     "N802",
-    "UP035",
 ]
 fixable = ["ALL"]
 unfixable = []
