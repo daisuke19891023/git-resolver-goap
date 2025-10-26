@@ -49,6 +49,10 @@ Describe why each action in the plan was selected, including alternative
 approaches and the estimated cost for every action. The `--json` flag produces a
 fully structured explanation payload.
 
+## Documentation
+
+For a detailed bilingual user manual, see [docs/user-manual.md](docs/user-manual.md).
+
 ## Development
 
 After making changes run the quality gates:
