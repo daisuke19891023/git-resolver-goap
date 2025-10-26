@@ -22,7 +22,7 @@ from goapgit.git.observe import RepoObserver
 from goapgit.io import StructuredLogger, load_config
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from pathlib import Path
     from goapgit.core.executor import ActionRunner
 
@@ -45,33 +45,13 @@ class WorkflowContext:
         """Return an executor-compatible action runner."""
 
         def runner(action: ActionSpec) -> bool:
-            result: bool | None = None
+            handler: ActionHandler | None = ACTION_HANDLERS.get(action.name)
+            if handler is None:
+                self.logger.warning("unknown action", action=action.name)
+                return False
+
             try:
-                if action.name == "Safety:CreateBackupRef":
-                    create_backup_ref(self.action_facade, self.logger)
-                    result = True
-                elif action.name == "Safety:EnsureCleanOrStash":
-                    ensure_clean_or_stash(self.action_facade, self.logger)
-                    result = True
-                elif action.name == "Conflict:AutoTrivialResolve":
-                    auto_trivial_resolve(self.action_facade, self.logger)
-                    result = True
-                elif action.name == "Conflict:ApplyPathStrategy":
-                    state = self.observer.observe()
-                    apply_path_strategy(
-                        self.action_facade,
-                        self.logger,
-                        state.conflicts,
-                        self.config.strategy_rules,
-                    )
-                    result = True
-                elif action.name == "Rebase:ContinueOrAbort":
-                    backup_ref = action.params.get("backup_ref") if action.params else None
-                    result = rebase_continue_or_abort(
-                        self.action_facade,
-                        self.logger,
-                        backup_ref=backup_ref,
-                    )
+                result = handler.run(self, action)
             except GitCommandError as error:
                 self.logger.error(
                     "action failed",
@@ -84,9 +64,6 @@ class WorkflowContext:
                 self.logger.error("unexpected action failure", action=action.name, error=str(error))
                 return False
 
-            if result is None:
-                self.logger.warning("unknown action", action=action.name)
-                return False
             return bool(result)
 
         return runner
@@ -138,98 +115,208 @@ def build_workflow_context(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ActionHandler:
+    """Bundle the data required to describe and execute an action."""
+
+    name: str
+    build_spec: Callable[[RepoState, Config], ActionSpec | None]
+    build_context: Callable[[Config], ActionContext | None]
+    run: Callable[[WorkflowContext, ActionSpec], bool]
+
+
+def _build_create_backup_spec(_: RepoState, __: Config) -> ActionSpec:
+    return ActionSpec(
+        name="Safety:CreateBackupRef",
+        cost=0.4,
+        rationale="Create a recoverable snapshot before making changes.",
+    )
+
+
+def _build_create_backup_context(_: Config) -> ActionContext:
+    return ActionContext(
+        reason="Create a timestamped backup ref so HEAD can be restored if later steps fail.",
+        alternatives=(
+            "Skip the backup and rely on reflog entries for recovery.",
+            "Create a lightweight branch instead of an update-ref entry.",
+        ),
+        cost_override=1.0,
+    )
+
+
+def _run_create_backup(context: WorkflowContext, _: ActionSpec) -> bool:
+    create_backup_ref(context.action_facade, context.logger)
+    return True
+
+
+def _build_ensure_clean_spec(_: RepoState, __: Config) -> ActionSpec:
+    return ActionSpec(
+        name="Safety:EnsureCleanOrStash",
+        cost=0.6,
+        rationale="Ensure the working tree is clean or safely stashed.",
+    )
+
+
+def _build_ensure_clean_context(_: Config) -> ActionContext:
+    return ActionContext(
+        reason="Guarantee a clean working tree before automated operations continue.",
+        alternatives=(
+            "Abort the workflow and ask the operator to clean up manually.",
+            "Create a temporary worktree rather than stashing changes.",
+        ),
+        cost_override=0.6,
+    )
+
+
+def _run_ensure_clean(context: WorkflowContext, _: ActionSpec) -> bool:
+    ensure_clean_or_stash(context.action_facade, context.logger)
+    return True
+
+
+def _build_auto_trivial_spec(_: RepoState, __: Config) -> ActionSpec:
+    return ActionSpec(
+        name="Conflict:AutoTrivialResolve",
+        cost=0.8,
+        rationale="Reuse rerere knowledge to resolve trivial conflicts.",
+    )
+
+
+def _build_auto_trivial_context(_: Config) -> ActionContext:
+    return ActionContext(
+        reason="Reuse git rerere to automatically apply previously recorded resolutions.",
+        alternatives=(
+            "Resolve conflicts manually to confirm each change.",
+            "Run a domain specific merge driver for known file types.",
+        ),
+        cost_override=0.8,
+    )
+
+
+def _run_auto_trivial(context: WorkflowContext, _: ActionSpec) -> bool:
+    auto_trivial_resolve(context.action_facade, context.logger)
+    return True
+
+
+def _build_apply_strategy_spec(_: RepoState, config: Config) -> ActionSpec | None:
+    if not config.strategy_rules:
+        return None
+    return ActionSpec(
+        name="Conflict:ApplyPathStrategy",
+        cost=1.2,
+        rationale="Apply configured conflict resolution strategies to matching paths.",
+    )
+
+
+def _build_apply_strategy_context(config: Config) -> ActionContext | None:
+    if not config.strategy_rules:
+        return None
+    return ActionContext(
+        reason="Use configured strategy rules to prefer ours/theirs on matching paths.",
+        alternatives=(
+            "Escalate to manual resolution in an editor.",
+            "Invoke a custom merge driver tuned for the file type.",
+        ),
+        cost_override=1.2,
+    )
+
+
+def _run_apply_strategy(context: WorkflowContext, _: ActionSpec) -> bool:
+    state = context.observer.observe()
+    apply_path_strategy(
+        context.action_facade,
+        context.logger,
+        state.conflicts,
+        context.config.strategy_rules,
+    )
+    return True
+
+
+def _build_rebase_spec(state: RepoState, _: Config) -> ActionSpec | None:
+    if not state.ongoing_rebase:
+        return None
+    return ActionSpec(
+        name="Rebase:ContinueOrAbort",
+        cost=1.5,
+        rationale="Complete or abort the ongoing rebase safely.",
+    )
+
+
+def _build_rebase_context(_: Config) -> ActionContext:
+    return ActionContext(
+        reason="Continue the rebase if conflicts are cleared, otherwise abort to restore HEAD.",
+        alternatives=(
+            "Abort immediately without attempting to continue.",
+            "Skip rebase continuation and return control to the operator.",
+        ),
+        cost_override=1.5,
+    )
+
+
+def _run_rebase(context: WorkflowContext, action: ActionSpec) -> bool:
+    backup_ref = action.params.get("backup_ref") if action.params else None
+    return rebase_continue_or_abort(
+        context.action_facade,
+        context.logger,
+        backup_ref=backup_ref,
+    )
+
+
+ACTION_HANDLER_SEQUENCE: tuple[ActionHandler, ...] = (
+    ActionHandler(
+        name="Safety:CreateBackupRef",
+        build_spec=_build_create_backup_spec,
+        build_context=_build_create_backup_context,
+        run=_run_create_backup,
+    ),
+    ActionHandler(
+        name="Safety:EnsureCleanOrStash",
+        build_spec=_build_ensure_clean_spec,
+        build_context=_build_ensure_clean_context,
+        run=_run_ensure_clean,
+    ),
+    ActionHandler(
+        name="Conflict:AutoTrivialResolve",
+        build_spec=_build_auto_trivial_spec,
+        build_context=_build_auto_trivial_context,
+        run=_run_auto_trivial,
+    ),
+    ActionHandler(
+        name="Conflict:ApplyPathStrategy",
+        build_spec=_build_apply_strategy_spec,
+        build_context=_build_apply_strategy_context,
+        run=_run_apply_strategy,
+    ),
+    ActionHandler(
+        name="Rebase:ContinueOrAbort",
+        build_spec=_build_rebase_spec,
+        build_context=_build_rebase_context,
+        run=_run_rebase,
+    ),
+)
+
+
+ACTION_HANDLERS: dict[str, ActionHandler] = {
+    handler.name: handler for handler in ACTION_HANDLER_SEQUENCE
+}
+
+
 def build_action_specs(state: RepoState, config: Config) -> list[ActionSpec]:
     """Return the default action catalogue for the current ``state``."""
-    actions: list[ActionSpec] = [
-        ActionSpec(
-            name="Safety:CreateBackupRef",
-            cost=0.4,
-            rationale="Create a recoverable snapshot before making changes.",
-        ),
-        ActionSpec(
-            name="Safety:EnsureCleanOrStash",
-            cost=0.6,
-            rationale="Ensure the working tree is clean or safely stashed.",
-        ),
-        ActionSpec(
-            name="Conflict:AutoTrivialResolve",
-            cost=0.8,
-            rationale="Reuse rerere knowledge to resolve trivial conflicts.",
-        ),
-    ]
-
-    if config.strategy_rules:
-        actions.append(
-            ActionSpec(
-                name="Conflict:ApplyPathStrategy",
-                cost=1.2,
-                rationale="Apply configured conflict resolution strategies to matching paths.",
-            ),
-        )
-
-    if state.ongoing_rebase:
-        actions.append(
-            ActionSpec(
-                name="Rebase:ContinueOrAbort",
-                cost=1.5,
-                rationale="Complete or abort the ongoing rebase safely.",
-            ),
-        )
-
+    actions: list[ActionSpec] = []
+    for handler in ACTION_HANDLER_SEQUENCE:
+        spec = handler.build_spec(state, config)
+        if spec is not None:
+            actions.append(spec)
     return actions
 
 
 def build_action_contexts(config: Config) -> dict[str, ActionContext]:
     """Create explanation metadata for known actions."""
-    contexts: dict[str, ActionContext] = {
-        "Safety:CreateBackupRef": ActionContext(
-            reason="Create a timestamped backup ref so HEAD can be restored if later steps fail.",
-            alternatives=(
-                "Skip the backup and rely on reflog entries for recovery.",
-                "Create a lightweight branch instead of an update-ref entry.",
-            ),
-            cost_override=1.0,
-        ),
-        "Safety:EnsureCleanOrStash": ActionContext(
-            reason="Guarantee a clean working tree before automated operations continue.",
-            alternatives=(
-                "Abort the workflow and ask the operator to clean up manually.",
-                "Create a temporary worktree rather than stashing changes.",
-            ),
-            cost_override=0.6,
-        ),
-        "Conflict:AutoTrivialResolve": ActionContext(
-            reason="Reuse git rerere to automatically apply previously recorded resolutions.",
-            alternatives=(
-                "Resolve conflicts manually to confirm each change.",
-                "Run a domain specific merge driver for known file types.",
-            ),
-            cost_override=0.8,
-        ),
-    }
-
-    if config.strategy_rules:
-        contexts["Conflict:ApplyPathStrategy"] = ActionContext(
-            reason="Use configured strategy rules to prefer ours/theirs on matching paths.",
-            alternatives=(
-                "Escalate to manual resolution in an editor.",
-                "Invoke a custom merge driver tuned for the file type.",
-            ),
-            cost_override=1.2,
-        )
-
-    contexts.setdefault(
-        "Rebase:ContinueOrAbort",
-        ActionContext(
-            reason="Continue the rebase if conflicts are cleared, otherwise abort to restore HEAD.",
-            alternatives=(
-                "Abort immediately without attempting to continue.",
-                "Skip rebase continuation and return control to the operator.",
-            ),
-            cost_override=1.5,
-        ),
-    )
-
+    contexts: dict[str, ActionContext] = {}
+    for handler in ACTION_HANDLER_SEQUENCE:
+        context_value = handler.build_context(config)
+        if context_value is not None:
+            contexts[handler.name] = context_value
     return contexts
 
 
@@ -246,6 +333,9 @@ def strategy_rules_to_params(rules: Sequence[StrategyRule]) -> list[dict[str, st
 
 
 __all__ = [
+    "ACTION_HANDLERS",
+    "ACTION_HANDLER_SEQUENCE",
+    "ActionHandler",
     "WorkflowContext",
     "build_action_contexts",
     "build_action_specs",
