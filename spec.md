@@ -217,7 +217,7 @@ class Config(BaseModel):
 - **Rebase:ContinueOrAbort** — `git rebase --continue | --skip | --abort`。
 - **Quality:RunTests** — `pytest -q` 等ユーザ設定のテストコマンド。
 - **Sync:PushWithLease** — `git push --force-with-lease`。
-- **Explain:RangeDiff** — `git range-diff <before> <after>` を提示して説明責任を果たす。
+- **Explain:RangeDiff** — `git range-diff -- <before> <after>` を提示して説明責任を果たす（`--` セパレータでオプション注入を防止）。
 
 ---
 
