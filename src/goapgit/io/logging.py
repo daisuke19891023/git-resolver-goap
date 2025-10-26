@@ -3,8 +3,59 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping as MappingABC
 from datetime import datetime, UTC
-from typing import Any, TextIO
+import re
+from typing import Any, TextIO, cast
+from collections.abc import Mapping
+
+from pydantic import BaseModel, SecretStr, field_validator
+
+
+class _SanitizedText(BaseModel):
+    """Model that normalises sensitive fragments in log text."""
+
+    text: SecretStr
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _mask_sensitive_data(cls, value: Any) -> str:
+        text = str(value)
+        patterns = [
+            (r"https://[^:]+:[^@]+@", "https://***:***@"),
+            (r"token[=:]\s*\S+", "token=***"),
+        ]
+        for pattern, replacement in patterns:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        return text
+
+
+def _sanitize_log_output(text: str) -> str:
+    """Mask sensitive fragments in the provided text."""
+    sanitized = _SanitizedText.model_validate({"text": text})
+    return sanitized.text.get_secret_value()
+
+
+def _sanitize_log_value(value: Any) -> Any:
+    """Apply sanitisation recursively to structured log data."""
+    if isinstance(value, str):
+        return _sanitize_log_output(value)
+    if isinstance(value, MappingABC):
+        typed_mapping = cast("Mapping[Any, Any]", value)
+        sanitised_mapping: dict[Any, Any] = {}
+        for key, item in typed_mapping.items():
+            sanitised_mapping[key] = _sanitize_log_value(item)
+        return sanitised_mapping
+    if isinstance(value, tuple):
+        typed_tuple = cast("tuple[Any, ...]", value)
+        return tuple(_sanitize_log_value(item) for item in typed_tuple)
+    if isinstance(value, list):
+        typed_list = cast("list[Any]", value)
+        return [_sanitize_log_value(item) for item in typed_list]
+    if isinstance(value, set):
+        typed_set = cast("set[Any]", value)
+        return {_sanitize_log_value(item) for item in typed_set}
+    return value
 
 
 class StructuredLogger:
@@ -44,19 +95,23 @@ class StructuredLogger:
 
     def _emit(self, level: str, message: str, fields: dict[str, Any]) -> None:
         timestamp = datetime.now(UTC).isoformat()
+        sanitised_message = _sanitize_log_output(message)
+        sanitised_fields = {key: _sanitize_log_value(value) for key, value in fields.items()}
         if self._json_mode:
             payload: dict[str, Any] = {
                 "timestamp": timestamp,
                 "level": level,
                 "logger": self._name,
-                "message": message,
+                "message": sanitised_message,
             }
-            payload.update(fields)
+            payload.update(sanitised_fields)
             self._stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
         else:
-            line = f"[{timestamp}] {level:<7} {self._name}: {message}"
-            if fields:
-                extras = " ".join(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in fields.items())
+            line = f"[{timestamp}] {level:<7} {self._name}: {sanitised_message}"
+            if sanitised_fields:
+                extras = " ".join(
+                    f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in sanitised_fields.items()
+                )
                 line = f"{line} | {extras}"
             self._stream.write(line + "\n")
         self._stream.flush()
