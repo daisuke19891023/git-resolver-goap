@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Callable, Sequence  # noqa: UP035
 
 import typer
+from pydantic import ValidationError
 
 from goapgit.cli.diagnose import DiagnoseError, generate_diagnosis, report_to_json
 from goapgit.cli.runtime import (
@@ -59,6 +60,16 @@ def _format_command(parts: Sequence[str]) -> str:
     return " ".join(_format_part(part) for part in parts)
 
 
+def _format_validation_error(exc: ValidationError) -> str:
+    """Return a concise summary describing ``exc``."""
+    fragments: list[str] = []
+    for error in exc.errors():
+        location = ".".join(str(part) for part in error.get("loc", ())) or "config"
+        message = error.get("msg") or str(exc)
+        fragments.append(f"{location}: {message}")
+    return "; ".join(fragments)
+
+
 def _prepare_context(
     repo: Path | None,
     config_path: Path | None,
@@ -72,6 +83,10 @@ def _prepare_context(
         config = load_cli_config(config_path)
     except FileNotFoundError as exc:
         typer.echo(f"Configuration file not found: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except ValidationError as exc:
+        message = _format_validation_error(exc) or str(exc)
+        typer.echo(f"Invalid configuration: {message}", err=True)
         raise typer.Exit(code=2) from exc
     except ValueError as exc:
         typer.echo(str(exc), err=True)
