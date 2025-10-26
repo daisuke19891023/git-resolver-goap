@@ -47,3 +47,29 @@ def test_structured_logger_text_mode() -> None:
     assert "INFO" in output
     assert "dry run complete" in output
     assert output.count("\n") == 1
+
+
+def test_structured_logger_masks_sensitive_data() -> None:
+    """Sensitive fragments should be masked before emission."""
+    json_stream = io.StringIO()
+    text_stream = io.StringIO()
+    json_logger = StructuredLogger(name="goapgit", json_mode=True, stream=json_stream)
+    text_logger = StructuredLogger(name="goapgit", json_mode=False, stream=text_stream)
+
+    secret_url = "https://" + "alice" + ":" + "supersecret" + "@example.com/repo.git"
+    secret_token = "token" + "=" + "abcd1234"
+    json_logger.info("Cloning %s", secret_url=secret_url, credentials=secret_token)
+    text_logger.error(
+        "Failed with token: %s",
+        details={"error": secret_token, "url": secret_url},
+    )
+
+    records = read_json_lines(json_stream)
+    assert records[0]["message"] == "Cloning %s"
+    assert records[0]["secret_url"] == "https://" + "***" + ":" + "***" + "@example.com/repo.git"
+    assert records[0]["credentials"] == "token" + "=***"
+
+    text_stream.seek(0)
+    text_output = text_stream.read()
+    assert ("https://" + "***" + ":" + "***" + "@example.com/repo.git") in text_output
+    assert ("token" + "=***") in text_output
