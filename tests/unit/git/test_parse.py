@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import textwrap
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pytest
 
 from goapgit.core.models import ConflictType
 from goapgit.git.parse import parse_conflict_markers, parse_merge_tree_conflicts
@@ -75,3 +79,38 @@ def test_parse_merge_tree_conflicts_extracts_paths() -> None:
     conflicts = parse_merge_tree_conflicts(output)
 
     assert conflicts == {"file.txt", "nested/path.json"}
+
+
+def test_parse_conflict_markers_skips_symlinks(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Avoid reading conflict markers through symlinked files."""
+    target = tmp_path / "target.json"
+    target.write_text("<<<<<<< ours\nvalue\n=======", encoding="utf-8")
+
+    symlink = tmp_path / "symlink.json"
+    symlink.symlink_to(target)
+
+    caplog.set_level("WARNING", logger="goapgit.git.parse")
+
+    detail = parse_conflict_markers(tmp_path, "symlink.json")
+
+    assert detail.hunk_count == 0
+    assert "symlinked path" in caplog.text
+
+
+def test_parse_conflict_markers_skips_outside_paths(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Ensure paths resolving outside the repository are ignored."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("<<<<<<< ours\ntext", encoding="utf-8")
+
+    caplog.set_level("WARNING", logger="goapgit.git.parse")
+
+    detail = parse_conflict_markers(repo, str(outside))
+
+    assert detail.hunk_count == 0
+    assert "outside repository" in caplog.text
